@@ -51,13 +51,13 @@ unsigned int ACP_half = 0;
 
 /*Переменная которая необходима для подсчета среднеквадратического
   значения*/
-unsigned long Asum = 0;
+unsigned long long Asum = 0;
 
 /*Число точек выборки*/
 unsigned char N = 0;
 
 /*Результирующее значение измерения напряжения полуволны*/
-unsigned char rezult_measuring = 0;
+unsigned int rezult_measuring = 0;
 
 char buf_time[9];//Хранение строки с временем ЧЧ:ММ:СС
 char buf_date[9];//Хранение строки с датой ДД.ММ.ГГ
@@ -67,7 +67,7 @@ FATFS fs;// Объявление объекта FATFS
 FRESULT res;// Переменная для возвращаемых значений, библиотеки FAT
 BYTE buff[512];// Буфер для временного хранения, перед записью на флешку
 WORD br; // Счетчик количества байт которые удалось записать
-BYTE test[10] = {'H', 'E', 'L', 'L', 'O', ' ', 'o', 'k', 0x0D, 0x0A};
+//BYTE test[10] = {'H', 'E', 'L', 'L', 'O', ' ', 'o', 'k', 0x0D, 0x0A};
 //0x0D = \r  0x0A = \n
 
 int main(void)
@@ -77,15 +77,14 @@ ds1307_init();
 adc_init();
 timer_init();
 asm("sei");
-
+/*
     //test
 	lcd_str("Hello, World");
 	lcd_gotoxy(1,0);
 	lcd_str("by shtomik");
 	_delay_ms(1000);
 	lcd_clr();
-	lcd_str("after clr");
-    //***********************
+	lcd_str("after clr");*/
 
 start_t();
 
@@ -106,11 +105,11 @@ if(res == FR_OK)
 			//иначе будет много лишних пробелов
             //sprintf(buff, "%s\n%s", "Hello,World!", "by_sht");
             //записываем его на карту
-            pf_write(test, 10, &br);
+            pf_write(buff, 512, &br);
 			//финализируем запись
        		pf_write(NULL, 0, &br);
 			pf_lseek(512);
-			pf_write(test, 10, &br);
+			pf_write(buff, 512, &br);
         	//финализируем запись
         	pf_write(NULL, 0, &br);
 
@@ -130,7 +129,6 @@ if(res == FR_OK)
 else
 {
     //не удалось смонтировать диск
-    //****************************
 	lcd_clr();
     lcd_str("not flash");
 }
@@ -143,11 +141,21 @@ else
 return 0;
 }
 
-unsigned char isqrt16(unsigned int from)
+void sumsquare(unsigned int a, unsigned int b)
+{
+unsigned long tmp = 0;
+        /*0.680 - Коэффициент измерения, переводим выхлоп АЦП в вольты*/
+        tmp = (((unsigned long)(a - b))*680)/1000;
+        tmp = ( (unsigned long)tmp )*( (unsigned long)tmp );
+        Asum = ((unsigned long long)Asum) + tmp;
+        ++N;
+}
+
+unsigned int isqrt32(unsigned long from)
 /*Нахождения корня числа за ~ 300 тактов*/
 {
-	unsigned int mask = 0x4000;
-	unsigned int sqr = 0, temp;
+	unsigned long mask = 0x40000000;
+	unsigned long sqr = 0, temp;
     do
 	{
          temp = sqr | mask;
@@ -158,36 +166,29 @@ unsigned char isqrt16(unsigned int from)
              from -= temp;
          }
      } while( mask >>= 2 );
-     if( sqr < from && sqr < 0xFF) ++sqr;
-return (unsigned char)sqr;
+     if( sqr < from && sqr < 0xFFFF) ++sqr;
+return (unsigned int)sqr;
 }
 
 ISR(TIMER2_COMP_vect)
 /*Прерывание для измерения*/
 {
-unsigned long tmp = 0;
     ACP = start_base_adc();
         if(flag == 0)
         {
            ACP_half = start_half_adc();
            flag = 1;
         }
-    if(ACP > ACP_half)
+    if(ACP > (ACP_half + 10))
     {
-        /*0.67 - Коэффициент измерения, переводим выхлоп АЦП в вольты*/
-        tmp = (((unsigned long)(ACP - ACP_half))*670)/1000;
-        tmp *= tmp;
-        Asum = ((unsigned long)Asum) + tmp;
+        sumsquare(ACP,ACP_half);
     }
-    else
+    if(ACP < (ACP_half - 10))
     {
-        tmp = (((unsigned long)ACP)*670)/1000;
-        tmp *= tmp;
-        Asum = ((unsigned long)Asum) + tmp;
+        sumsquare(ACP_half,ACP);
     }
-    ++N;
-	if((ACP < (ACP_half + 20)) && (ACP > (ACP_half - 20)))
-    /*+ или - 20 делений, это зона нечувствительности +-10В для определения
+	if((ACP < (ACP_half + 10)) && (ACP > (ACP_half - 10)))
+    /*+ или - 10 делений, это зона нечувствительности +-5В для определения
       перехода через ноль*/
 	{
         if( (N > 40) && (N < 50) )
@@ -195,7 +196,7 @@ unsigned long tmp = 0;
           значения напряжения, если меньше или больше, значит мы не всю полуволну
           меряем или больше чем полуволна*/
         {
-            rezult_measuring = isqrt16( Asum / N );
+            rezult_measuring = isqrt32( Asum / N );
             flag = 0;
             N = 0;
             Asum = 0;

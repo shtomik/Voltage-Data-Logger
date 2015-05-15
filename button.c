@@ -96,6 +96,8 @@ void btt_set(void)
                     setup_time();
 			break;
             case 2: menu = 2;
+                    lcd_gotoxy(1,0);
+                    lcd_str("...");
                     start_t2();         /*Запуск таймера и измерения*/
             break;
 			default:menu = 2;lcd_clr();lcd_str("Error!!!");
